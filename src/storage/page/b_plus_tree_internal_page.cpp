@@ -31,6 +31,7 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id
     SetMaxSize(max_size);
     SetSize(0);
     SetPageType(IndexPageType::INTERNAL_PAGE);
+    array_.resize(1);
 }
 /*
  * Helper method to get/set the key associated with input "index"(a.k.a
@@ -58,6 +59,11 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
   BUSTUB_ASSERT(index <= GetSize(), "Invalid index in BPlusTreeInternalPage");
   return array_[index].second;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::LookUp(const KeyType &key) -> page_id_t {
+  return INVALID_PAGE_ID;
 }
 
 // valuetype for internalNode should be page id_t

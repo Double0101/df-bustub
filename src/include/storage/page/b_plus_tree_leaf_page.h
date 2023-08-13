@@ -49,6 +49,9 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   auto GetNextPageId() const -> page_id_t;
   void SetNextPageId(page_id_t next_page_id);
   auto KeyAt(int index) const -> KeyType;
+  auto ValueAt(int index) const -> ValueType;
+  auto KeyValueAt(int index) const -> MappingType;
+  auto GetArray() const -> std::vector<MappingType> &;
 
  private:
   page_id_t next_page_id_;
