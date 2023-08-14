@@ -46,8 +46,8 @@ class IndexIterator {
   // add your own private member variables here
   B_PLUS_TREE_LEAF_PAGE_TYPE *leaf_page_;
   BufferPoolManager *buffer_pool_manager_;
-  std::vector<MappingType> &array_;
   int cur_idx_{-1};
+  MappingType *array_;
 };
 
 }  // namespace bustub

@@ -32,7 +32,9 @@ auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return root_page_id_ == INVALID_P
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction) -> bool {
-  if (IsEmpty()) { return false; }
+  if (IsEmpty()) {
+    return false;
+  }
 
   INDEXITERATOR_TYPE it = Begin(key);
   const MappingType &kv = *it;
@@ -55,14 +57,49 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
+  Page *page;
+  page_id_t page_id;
+  page_id_t pre_page_id;
   if (IsEmpty()) {
-    root_page_id_ = 1;
-    Page *root = buffer_pool_manager_->NewPage(&root_page_id_);
-    UpdateRootPageId(0);
-    buffer_pool_manager_->UnpinPage(root_page_id_, false);
+    // Create a new Root Page and set root_page_id_
+    page = buffer_pool_manager_->NewPage(&page_id);
+    if (page_id == INVALID_PAGE_ID) {
+      return false;
+    }
+    auto lp = reinterpret_cast<LeafPage*>(page->GetData());
+    lp->Init(page_id, INVALID_PAGE_ID, leaf_max_size_);
+    root_page_id_ = page_id;
+  } else {
+    page = buffer_pool_manager_->FetchPage(root_page_id_);
+  }
+  auto *bpp = reinterpret_cast<BPlusTreePage*>(page->GetData());
+  InternalPage *bpip;
+  page_id = root_page_id_;
+  while (!bpp->IsLeafPage()) {
+    bpip = reinterpret_cast<InternalPage*>(bpp);
+    pre_page_id = page_id;
+
+    int i = 1;
+    if (bpip->GetSize() > 1) {
+      while (i <= bpip->GetSize() && comparator_(key, bpip->KeyAt(i)) >= 0) {
+        ++i;
+      }
+    }
+    page_id = bpip->ValueAt(i-1);
+
+    buffer_pool_manager_->UnpinPage(pre_page_id, false);
+    page = buffer_pool_manager_->FetchPage(page_id);
+    bpp = reinterpret_cast<BPlusTreePage *>(page->GetData());
   }
 
-  return false;
+  auto *leaf_page = reinterpret_cast<LeafPage*>(bpp);
+  if (leaf_page->GetSize() < leaf_max_size_) {
+    leaf_page->IncreaseSize(1);
+
+  } else {
+
+  }
+  return true;
 }
 
 /*****************************************************************************
@@ -87,7 +124,29 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {}
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
+  if (IsEmpty()) {
+    return INDEXITERATOR_TYPE(nullptr, nullptr);
+  }
+
+  page_id_t page_id = root_page_id_;
+  page_id_t pre_page_id;
+  Page *page = buffer_pool_manager_->FetchPage(page_id);
+  InternalPage *bpip;
+  auto *bpp = reinterpret_cast<BPlusTreePage *>(page->GetData());
+  while (!bpp->IsLeafPage()) {
+    bpip = reinterpret_cast<InternalPage *>(bpp);
+    pre_page_id = page_id;
+    page_id = bpip->ValueAt(0);
+
+    buffer_pool_manager_->UnpinPage(pre_page_id, false);
+    page = buffer_pool_manager_->FetchPage(page_id);
+    bpp = reinterpret_cast<BPlusTreePage *>(page->GetData());
+  }
+  auto *leaf_page = reinterpret_cast<LeafPage *>(bpp);
+
+  return INDEXITERATOR_TYPE(leaf_page, buffer_pool_manager_);
+}
 
 /*
  * Input parameter is low key, find the leaf page that contains the input key
@@ -95,7 +154,40 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE()
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
+  if (IsEmpty()) {
+    return INDEXITERATOR_TYPE(nullptr, nullptr);
+  }
+
+  page_id_t page_id = root_page_id_;
+  page_id_t pre_page_id;
+  Page *page = buffer_pool_manager_->FetchPage(page_id);
+  InternalPage *bpip;
+  auto *bpp = reinterpret_cast<BPlusTreePage *>(page->GetData());
+  while (!bpp->IsLeafPage()) {
+    bpip = reinterpret_cast<InternalPage *>(bpp);
+    pre_page_id = page_id;
+
+    int i = 1;
+    if (bpip->GetSize() > 1) {
+      while (i <= bpip->GetSize() && comparator_(key, bpip->KeyAt(i)) >= 0) {
+        ++i;
+      }
+    }
+    page_id = bpip->ValueAt(i - 1);
+
+    buffer_pool_manager_->UnpinPage(pre_page_id, false);
+    page = buffer_pool_manager_->FetchPage(page_id);
+    bpp = reinterpret_cast<BPlusTreePage *>(page->GetData());
+  }
+  auto *leaf_page = reinterpret_cast<LeafPage *>(bpp);
+
+  INDEXITERATOR_TYPE it(leaf_page, buffer_pool_manager_);
+  while (it != End() && comparator_(key, (*it).first) > 0) {
+    ++it;
+  }
+  return it;
+}
 
 /*
  * Input parameter is void, construct an index iterator representing the end
@@ -103,7 +195,7 @@ auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE { return IN
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(nullptr, nullptr); }
 
 /**
  * @return Page id of the root of this tree

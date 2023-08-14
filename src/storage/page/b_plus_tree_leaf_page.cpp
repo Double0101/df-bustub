@@ -71,7 +71,7 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyValueAt(int index) const -> MappingType {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_LEAF_PAGE_TYPE::GetArray() const -> std::vector<MappingType> & {
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::GetArray() -> MappingType* {
   return array_;
 }
 

@@ -15,10 +15,16 @@ INDEX_TEMPLATE_ARGUMENTS
 INDEXITERATOR_TYPE::IndexIterator(B_PLUS_TREE_LEAF_PAGE_TYPE *leaf_page, BufferPoolManager *buffer_pool_manager)
     : leaf_page_(leaf_page), array_(leaf_page->GetArray()) {
   buffer_pool_manager_ = buffer_pool_manager;
+  cur_idx_ = 0;
 };
 
 INDEX_TEMPLATE_ARGUMENTS
-INDEXITERATOR_TYPE::~IndexIterator() = default;  // NOLINT
+INDEXITERATOR_TYPE::~IndexIterator() {
+  if (leaf_page_ != nullptr && leaf_page_->GetPageId() != INVALID_PAGE_ID) {
+    // TODO: is_dirty may not be false
+    buffer_pool_manager_->UnpinPage(leaf_page_->GetPageId(), false);
+  }
+};  // NOLINT
 
 INDEX_TEMPLATE_ARGUMENTS
 auto INDEXITERATOR_TYPE::IsEnd() -> bool {
@@ -34,6 +40,8 @@ auto INDEXITERATOR_TYPE::operator++() -> INDEXITERATOR_TYPE & {
   if (cur_idx_ == leaf_page_->GetSize()) {
     if (leaf_page_->GetNextPageId() != INVALID_PAGE_ID) {
       page_id_t next_page = leaf_page_->GetNextPageId();
+      // TODO: is_dirty may not be false
+      buffer_pool_manager_->UnpinPage(leaf_page_->GetPageId(), false);
       Page *page = buffer_pool_manager_->FetchPage(next_page);
       leaf_page_ = reinterpret_cast<B_PLUS_TREE_LEAF_PAGE_TYPE*>(page->GetData());
       array_ = leaf_page_->GetArray();
