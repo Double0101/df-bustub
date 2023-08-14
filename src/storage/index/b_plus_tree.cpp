@@ -94,10 +94,23 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
 
   auto *leaf_page = reinterpret_cast<LeafPage*>(bpp);
   if (leaf_page->GetSize() < leaf_max_size_) {
+    int i;
+    MappingType *array = leaf_page->GetArray();
+
+    // Check duplicated key
+    for (i = 0; i < leaf_page->GetSize() && comparator_(key, array[i].first) > 0; ++i) {}
+    if (comparator_(key, array[i].first) == 0) {
+      return false;
+    }
+
+    // Insert
+    for (i = leaf_page->GetSize()-1; i >= 0 && comparator_(array[i].first, key) > 0; --i) {
+      array[i+1] = array[i];
+    }
+    array[i] = {key, value};
     leaf_page->IncreaseSize(1);
-
   } else {
-
+    // Need to split this page
   }
   return true;
 }
