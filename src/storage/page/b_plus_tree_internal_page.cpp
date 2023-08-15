@@ -26,11 +26,11 @@ namespace bustub {
  */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id, int max_size) {
-    SetPageId(page_id);
-    SetParentPageId(parent_id);
-    SetMaxSize(max_size);
-    SetSize(0);
-    SetPageType(IndexPageType::INTERNAL_PAGE);
+  SetPageId(page_id);
+  SetParentPageId(parent_id);
+  SetMaxSize(max_size);
+  SetSize(0);
+  SetPageType(IndexPageType::INTERNAL_PAGE);
 }
 /*
  * Helper method to get/set the key associated with input "index"(a.k.a
@@ -58,6 +58,22 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
   BUSTUB_ASSERT(index <= GetSize(), "Invalid index in BPlusTreeInternalPage");
   return array_[index].second;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Insert(const KeyType &key, const ValueType &value, const KeyComparator &comparator)
+    -> void {
+  int idx;
+  for (idx = GetSize(); idx > 0 && comparator(key, KeyAt(idx)) < 0; --idx) {
+    array_[idx + 1] = array_[idx];
+  }
+  array_[idx + 1] = {key, value};
+  IncreaseSize(1);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SplitFrom(const B_PLUS_TREE_INTERNAL_PAGE_TYPE *from_page) -> void {
+  
 }
 
 // valuetype for internalNode should be page id_t

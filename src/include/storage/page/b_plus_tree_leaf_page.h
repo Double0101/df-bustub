@@ -52,7 +52,9 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   auto ValueAt(int index) const -> ValueType;
   auto KeyValueAt(int index) const -> MappingType;
   auto GetArray() -> MappingType*;
-
+  auto Exist(const KeyType &key, const KeyComparator &comparator) -> bool;
+  auto Insert(const KeyType &key, const ValueType &value, const KeyComparator &comparator) -> bool;
+  auto SplitFrom(const B_PLUS_TREE_LEAF_PAGE_TYPE *from_page) -> void;
 
  private:
   page_id_t next_page_id_;

@@ -70,4 +70,8 @@ void BPlusTreePage::SetPageId(page_id_t page_id) {
  */
 void BPlusTreePage::SetLSN(lsn_t lsn) { lsn_ = lsn; }
 
+auto BPlusTreePage::IsFull() -> bool {
+  return size_ == max_size_;
+}
+
 }  // namespace bustub

@@ -21,7 +21,9 @@ BPLUSTREE_TYPE::BPlusTree(std::string name, BufferPoolManager *buffer_pool_manag
  * Helper function to decide whether current b+tree is empty
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return root_page_id_ == INVALID_PAGE_ID; }
+auto BPLUSTREE_TYPE::IsEmpty() const -> bool {
+  return root_page_id_ == INVALID_PAGE_ID;
+}
 /*****************************************************************************
  * SEARCH
  *****************************************************************************/
@@ -92,25 +94,47 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
     bpp = reinterpret_cast<BPlusTreePage *>(page->GetData());
   }
 
-  auto *leaf_page = reinterpret_cast<LeafPage*>(bpp);
-  if (leaf_page->GetSize() < leaf_max_size_) {
-    int i;
-    MappingType *array = leaf_page->GetArray();
+  LeafPage *leaf_page = reinterpret_cast<LeafPage*>(bpp);
+  if (leaf_page->IsExist(key, comparator_)) {
+    return false;
+  }
 
-    // Check duplicated key
-    for (i = 0; i < leaf_page->GetSize() && comparator_(key, array[i].first) > 0; ++i) {}
-    if (comparator_(key, array[i].first) == 0) {
-      return false;
-    }
-
-    // Insert
-    for (i = leaf_page->GetSize()-1; i >= 0 && comparator_(array[i].first, key) > 0; --i) {
-      array[i+1] = array[i];
-    }
-    array[i] = {key, value};
-    leaf_page->IncreaseSize(1);
+  if (!leaf_page->IsFull()) {
+    return leaf_page->Insert(key, value, comparator_);
   } else {
     // Need to split this page
+    page_id_t new_page_id;
+    KeyType new_key;
+    Page *new_page = buffer_pool_manager_->NewPage(&new_page_id);
+    LeafPage *new_leaf = reinterpret_cast<LeafPage*>(new_page->GetData());
+    new_leaf->Init(new_page_id, leaf_page->GetParentPageId(), leaf_max_size_);
+    new_leaf->SplitFrom(leaf_page);
+    new_key = new_leaf->KeyAt(0);
+
+    if (comparator_(new_leaf->KeyAt(0), key) > 0) {
+      leaf_page->Insert(key, value, comparator_);
+    } else {
+      new_leaf->Insert(key, value, comparator_);
+    }
+    buffer_pool_manager_->UnpinPage(leaf_page->GetParentPageId(), true);
+
+    // Insert new InternalPage Up-forward
+    page_id_t parent_page_id = new_leaf->GetParentPageId();
+    buffer_pool_manager_->UnpinPage(new_page_id, true);
+    Page *parent_page = buffer_pool_manager_->FetchPage(parent_page_id);
+    InternalPage *parent_internal_page = reinterpret_cast<InternalPage*>(parent_page->GetData());
+    while (parent_internal_page->IsFull()) {
+      // Split internal page
+      new_page_id = parent_page_id;
+
+      // TODO: create new internal_page
+
+      parent_page_id = parent_internal_page->GetParentPageId();
+      buffer_pool_manager_->UnpinPage(new_page_id, true);
+      parent_page = buffer_pool_manager_->FetchPage(parent_page_id);
+      parent_internal_page = reinterpret_cast<InternalPage*>(parent_page->GetData());
+    }
+    parent_internal_page->Insert(new_key, new_page_id, comparator_);
   }
   return true;
 }
