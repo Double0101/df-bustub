@@ -59,84 +59,26 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
-  Page *page;
   page_id_t page_id;
-  page_id_t pre_page_id;
+  Page* page;
+  BPlusTreePage *b_page;
+  // read or init root page
   if (IsEmpty()) {
-    // Create a new Root Page and set root_page_id_
     page = buffer_pool_manager_->NewPage(&page_id);
-    if (page_id == INVALID_PAGE_ID) {
-      return false;
-    }
-    auto lp = reinterpret_cast<LeafPage*>(page->GetData());
-    lp->Init(page_id, INVALID_PAGE_ID, leaf_max_size_);
+    b_page = reinterpret_cast<BPlusTreePage*>(page->GetData());
     root_page_id_ = page_id;
+    B_PLUS_TREE_LEAF_PAGE_TYPE *lp = reinterpret_cast<B_PLUS_TREE_LEAF_PAGE_TYPE*>(b_page);
+    lp->Init(page_id, INVALID_PAGE_ID, leaf_max_size_);
+    UpdateRootPageId();
   } else {
     page = buffer_pool_manager_->FetchPage(root_page_id_);
-  }
-  auto *bpp = reinterpret_cast<BPlusTreePage*>(page->GetData());
-  InternalPage *bpip;
-  page_id = root_page_id_;
-  while (!bpp->IsLeafPage()) {
-    bpip = reinterpret_cast<InternalPage*>(bpp);
-    pre_page_id = page_id;
-
-    int i = 1;
-    if (bpip->GetSize() > 1) {
-      while (i <= bpip->GetSize() && comparator_(key, bpip->KeyAt(i)) >= 0) {
-        ++i;
-      }
-    }
-    page_id = bpip->ValueAt(i-1);
-
-    buffer_pool_manager_->UnpinPage(pre_page_id, false);
-    page = buffer_pool_manager_->FetchPage(page_id);
-    bpp = reinterpret_cast<BPlusTreePage *>(page->GetData());
+    b_page = reinterpret_cast<BPlusTreePage*>(page->GetData());
   }
 
-  LeafPage *leaf_page = reinterpret_cast<LeafPage*>(bpp);
-  if (leaf_page->IsExist(key, comparator_)) {
-    return false;
+  while (!b_page->IsLeafPage()) {
+
   }
-
-  if (!leaf_page->IsFull()) {
-    return leaf_page->Insert(key, value, comparator_);
-  } else {
-    // Need to split this page
-    page_id_t new_page_id;
-    KeyType new_key;
-    Page *new_page = buffer_pool_manager_->NewPage(&new_page_id);
-    LeafPage *new_leaf = reinterpret_cast<LeafPage*>(new_page->GetData());
-    new_leaf->Init(new_page_id, leaf_page->GetParentPageId(), leaf_max_size_);
-    new_leaf->SplitFrom(leaf_page);
-    new_key = new_leaf->KeyAt(0);
-
-    if (comparator_(new_leaf->KeyAt(0), key) > 0) {
-      leaf_page->Insert(key, value, comparator_);
-    } else {
-      new_leaf->Insert(key, value, comparator_);
-    }
-    buffer_pool_manager_->UnpinPage(leaf_page->GetParentPageId(), true);
-
-    // Insert new InternalPage Up-forward
-    page_id_t parent_page_id = new_leaf->GetParentPageId();
-    buffer_pool_manager_->UnpinPage(new_page_id, true);
-    Page *parent_page = buffer_pool_manager_->FetchPage(parent_page_id);
-    InternalPage *parent_internal_page = reinterpret_cast<InternalPage*>(parent_page->GetData());
-    while (parent_internal_page->IsFull()) {
-      // Split internal page
-      new_page_id = parent_page_id;
-
-      // TODO: create new internal_page
-
-      parent_page_id = parent_internal_page->GetParentPageId();
-      buffer_pool_manager_->UnpinPage(new_page_id, true);
-      parent_page = buffer_pool_manager_->FetchPage(parent_page_id);
-      parent_internal_page = reinterpret_cast<InternalPage*>(parent_page->GetData());
-    }
-    parent_internal_page->Insert(new_key, new_page_id, comparator_);
-  }
-  return true;
+  return false;
 }
 
 /*****************************************************************************

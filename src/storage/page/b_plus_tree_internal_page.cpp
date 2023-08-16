@@ -39,14 +39,14 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyAt(int index) const -> KeyType {
   // replace with your own code
-  BUSTUB_ASSERT(index <= GetSize(), "Invalid index in BPlusTreeInternalPage");
+  BUSTUB_ASSERT(index < GetSize(), "Invalid index in BPlusTreeInternalPage");
   KeyType key = array_[index].first;
   return key;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
-  BUSTUB_ASSERT(index <= GetSize(), "Invalid index in BPlusTreeInternalPage");
+  BUSTUB_ASSERT(index < GetSize(), "Invalid index in BPlusTreeInternalPage");
   array_[index].first = key;
 }
 
@@ -56,7 +56,7 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
-  BUSTUB_ASSERT(index <= GetSize(), "Invalid index in BPlusTreeInternalPage");
+  BUSTUB_ASSERT(index < GetSize(), "Invalid index in BPlusTreeInternalPage");
   return array_[index].second;
 }
 
@@ -64,7 +64,7 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Insert(const KeyType &key, const ValueType &value, const KeyComparator &comparator)
     -> void {
   int idx;
-  for (idx = GetSize(); idx > 0 && comparator(key, KeyAt(idx)) < 0; --idx) {
+  for (idx = GetSize() - 1; idx > 0 && comparator(key, KeyAt(idx)) < 0; --idx) {
     array_[idx + 1] = array_[idx];
   }
   array_[idx + 1] = {key, value};

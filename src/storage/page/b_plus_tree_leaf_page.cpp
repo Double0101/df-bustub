@@ -78,7 +78,7 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &value, const KeyComparator &comparator)
     -> bool {
   int idx;
-  for (idx = GetSize() - 1; idx >= 0 && comparator(key, KeyAt(idx)) < 0; ++idx) {
+  for (idx = GetSize() - 1; idx >= 0 && comparator(key, KeyAt(idx)) < 0; --idx) {
     array_[idx + 1] = array_[idx];
   }
   array_[idx + 1] = {key, value};
@@ -87,17 +87,39 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &val
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_LEAF_PAGE_TYPE::SplitFrom(const B_PLUS_TREE_LEAF_PAGE_TYPE *from_page) -> void {
-  MappingType *from_array = from_page->GetArray();
-  int eidx = GetMaxSize();
-  int idx = 0;
-  for (int i = eidx/2; i < eidx; ++i) {
-    array_[idx++] = from_array[i];
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::InsertAndSplit(const KeyType &key, const ValueType &value,
+                                                B_PLUS_TREE_LEAF_PAGE_TYPE *new_page,
+                                                const KeyComparator &comparator) -> void {
+  std::list<MappingType> tmplist;
+  for (int i = 0; i < GetSize(); ++i) {
+    tmplist.emplace_back(array_[i]);
   }
-  from_page->SetSize(eidx / 2);  
-  SetSize(eidx - eidx / 2);
-  SetNextPageId(from_page->GetNextPageId());
-  from_page->SetNextPageId(GetPageId());
+  auto it = tmplist.begin();
+  while (it != tmplist.end() && comparator((*it).first, key) < 0) {
+    ++it;
+  }
+  if (it == tmplist.end()) {
+    tmplist.emplace_back(key, value);
+  } else {
+    tmplist.insert(it, {key, value});
+  }
+  int nbg = tmplist.size() / 2;
+  SetSize(nbg);
+  it = tmplist.begin();
+  for (int i = 0; i < nbg; ++i) {
+    ++it;
+  }
+  MappingType *array = new_page->GetArray();
+  int i = 0;
+  for (; it != tmplist.end(); ++it) {
+    array[i] = *it;
+    ++i;
+  }
+  new_page->SetSize(i);
+
+  new_page->SetParentPageId(GetParentPageId());
+  new_page->SetNextPageId(next_page_id_);
+  next_page_id_ = new_page->GetPageId();
 }
 
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;
