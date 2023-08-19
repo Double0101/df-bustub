@@ -61,6 +61,12 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetValueAt(int index, const ValueType &value) {
+  BUSTUB_ASSERT(index < GetSize(), "Invalid index in BPlusTreeInternalPage");
+  array_[index].second = value;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Insert(const KeyType &key, const ValueType &value, const KeyComparator &comparator)
     -> void {
   int idx;
@@ -72,8 +78,34 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Insert(const KeyType &key, const ValueType 
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SplitFrom(const B_PLUS_TREE_INTERNAL_PAGE_TYPE *from_page) -> void {
-  
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::GetArray() -> MappingType * {
+  return array_;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertAndSplit(const KeyType &key, const ValueType &value,
+                                                    B_PLUS_TREE_INTERNAL_PAGE_TYPE *new_page,
+                                                    const KeyComparator &comparator) -> KeyType {
+  MappingType *new_array = new_page->GetArray();
+  int pivot = GetSize()/2 + 1;
+  int i;
+  int j = 0;
+  if (comparator(key, array_[pivot].first) > 0) {
+    for (i = pivot; i < GetSize(); ++i) {
+      new_array[j++] = array_[i];
+    }
+    new_page->SetSize(j);
+    new_page->Insert(key, value, comparator);
+    SetSize(pivot);
+  } else {
+    for (i = pivot - 1; i < GetSize(); ++i) {
+      new_array[j++] = array_[i];
+    }
+    new_page->SetSize(j);
+    SetSize(pivot-1);
+    Insert(key, value, comparator);
+  }
+  return new_array[0].first;
 }
 
 // valuetype for internalNode should be page id_t

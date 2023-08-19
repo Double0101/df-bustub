@@ -23,6 +23,11 @@ namespace bustub {
 
 #define BPLUSTREE_TYPE BPlusTree<KeyType, ValueType, KeyComparator>
 
+#define READ_MODE 0
+#define WRITE_MODE 1
+
+#define BEFORE_ROOT_PAGE nullptr
+
 /**
  * Main class providing the API for the Interactive B+ Tree.
  *
@@ -81,7 +86,11 @@ class BPlusTree {
   void ToGraph(BPlusTreePage *page, BufferPoolManager *bpm, std::ofstream &out) const;
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
-
+  auto FindLeafPage(const KeyType &key, int mode, Transaction *transaction) -> Page *;
+  auto InsertUpforward(const KeyType &key, const ValueType &value, Page *page,
+                       Transaction *transaction) -> bool;
+  auto ReleaseBeforePages(int mode, Transaction *transaction) -> void;
+  auto ClearTransPages(int mode, Transaction *transaction) -> void;
   // member variable
   std::string index_name_;
   page_id_t root_page_id_;
@@ -89,6 +98,7 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  std::mutex root_latch_;
 };
 
 }  // namespace bustub

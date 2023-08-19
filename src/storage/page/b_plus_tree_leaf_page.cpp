@@ -90,34 +90,28 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::InsertAndSplit(const KeyType &key, const ValueType &value,
                                                 B_PLUS_TREE_LEAF_PAGE_TYPE *new_page,
                                                 const KeyComparator &comparator) -> void {
-  std::list<MappingType> tmplist;
-  for (int i = 0; i < GetSize(); ++i) {
-    tmplist.emplace_back(array_[i]);
-  }
-  auto it = tmplist.begin();
-  while (it != tmplist.end() && comparator((*it).first, key) < 0) {
-    ++it;
-  }
-  if (it == tmplist.end()) {
-    tmplist.emplace_back(key, value);
-  } else {
-    tmplist.insert(it, {key, value});
-  }
-  int nbg = tmplist.size() / 2;
-  SetSize(nbg);
-  it = tmplist.begin();
-  for (int i = 0; i < nbg; ++i) {
-    ++it;
-  }
-  MappingType *array = new_page->GetArray();
-  int i = 0;
-  for (; it != tmplist.end(); ++it) {
-    array[i] = *it;
-    ++i;
-  }
-  new_page->SetSize(i);
+  int pivot = (GetSize() - 1) > 1;
+  KeyType pivot_key = array_[pivot].first;
+  MappingType *new_array = new_page->GetArray();
 
-  new_page->SetParentPageId(GetParentPageId());
+  int i;
+  int j = 0;
+  if (comparator(key, pivot_key) > 0) {
+    for (i = pivot + 1; i < GetSize(); ++i) {
+      new_array[j++] = array_[i];
+    }
+    new_page->SetSize(j);
+    new_page->Insert(key, value, comparator);
+    SetSize(pivot + 1);
+  } else {
+    for (i = pivot; i < GetSize(); ++i) {
+      new_array[j++] = array_[i];
+    }
+    new_page->SetSize(j);
+    SetSize(pivot);
+    Insert(key, value, comparator);
+  }
+
   new_page->SetNextPageId(next_page_id_);
   next_page_id_ = new_page->GetPageId();
 }
