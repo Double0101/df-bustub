@@ -148,10 +148,8 @@ class LRUKReplacer {
   size_t curr_time_{0};
   size_t curr_size_{0};
   size_t replacer_size_;
-//  size_t filled_size_{0};
-  std::mutex latch_;
+  std::recursive_mutex latch_;
   std::vector<bool> evictable_;
-//  std::vector<bool> filled_;
   std::vector<size_t> counter_;
   std::shared_ptr<std::list<Query>> cache_queue_[2];
   auto CacheUpgrade(frame_id_t frame_id) -> void;

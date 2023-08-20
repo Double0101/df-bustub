@@ -39,15 +39,17 @@ BufferPoolManagerInstance::~BufferPoolManagerInstance() {
 
 auto BufferPoolManagerInstance::GetEmptyPage(frame_id_t *frame_id) -> bool {
   Page *page;
+  free_list_latch_.lock();
   if (!free_list_.empty()) {
     *frame_id = free_list_.front();
     free_list_.pop_front();
+    free_list_latch_.unlock();
     return true;
   }
+  free_list_latch_.unlock();
   if (!replacer_->Evict(frame_id)) { return false; }
   page = pages_ + *frame_id;
   page_table_->Remove(page->page_id_);
-  ResetPage(page);
   return true;
 }
 
@@ -79,6 +81,7 @@ auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
 }
 
 auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
+  alloc_latch_.WLock();
   frame_id_t frame_id = 0;
   bool res = page_table_->Find(page_id, frame_id);
   Page *page = pages_ + frame_id;
@@ -90,8 +93,11 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
     page->page_id_ = page_id;
     page_table_->Insert(page_id, frame_id);
   }
+  page->WLatch();
   page->pin_count_ += 1;
+  page->WUnlatch();
   replacer_->RecordAccess(frame_id);
+  alloc_latch_.WUnlock();
   return page;
 }
 
@@ -106,11 +112,16 @@ auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> 
   if (is_dirty) {
     FlushPgImp(page_id);
   }
-  if (page->GetPinCount() == 0) { return false; }
+  page->WLatch();
+  if (page->GetPinCount() == 0) {
+    page->WUnlatch();
+    return false;
+  }
   --(page->pin_count_);
   if (page->pin_count_ == 0) {
     replacer_->SetEvictable(frame_id, true);
   }
+  page->WUnlatch();
   return true;
 }
 
@@ -144,9 +155,14 @@ auto BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) -> bool {
   res = page_table_->Find(page_id, frame_id);
   if (!res) { return true; }
   page = pages_ + frame_id;
-  if (page->pin_count_ > 0) { return false; }
+  page->RLatch();
+  if (page->pin_count_ > 0) {
+    page->RUnlatch();
+    return false;
+  }
 
   DeallocatePage(page_id);
+  page->RUnlatch();
   return false;
 }
 
@@ -160,7 +176,9 @@ auto BufferPoolManagerInstance::DeallocatePage(page_id_t page_id) -> void {
   if (res) {
     page = pages_ + frame_id;
     ResetPage(page);
+    free_list_latch_.lock();
     free_list_.push_back(frame_id);
+    free_list_latch_.unlock();
     replacer_->Remove(frame_id);
     page_table_->Remove(page_id);
   }

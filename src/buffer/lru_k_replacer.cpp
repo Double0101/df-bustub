@@ -22,6 +22,7 @@ LRUKReplacer::LRUKReplacer(size_t num_frames, size_t k) : k_(k), replacer_size_(
 }
 
 auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
+  std::scoped_lock<std::recursive_mutex> lock(latch_);
   for (size_t level = 0; level < 2; ++level) {
     std::shared_ptr<std::list<Query>> ql = cache_queue_[level];
     auto it = ql->begin();
@@ -46,14 +47,17 @@ auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
 }
 
 void LRUKReplacer::RecordAccess(frame_id_t frame_id) {
-  BUSTUB_ASSERT(frame_id < (int32_t) replacer_size_, "Unexpect frame id");
+  BUSTUB_ASSERT(frame_id < (int32_t)replacer_size_, "Unexpect frame id");
+  std::scoped_lock<std::recursive_mutex> lock(latch_);
   ++counter_[frame_id];
   if (counter_[frame_id] == k_) {
     CacheUpgrade(frame_id);
   }
   if (counter_[frame_id] >= k_) {
     cache_queue_[1]->emplace_back(frame_id, curr_time_++);
-    if (counter_[frame_id] == k_) { return; }
+    if (counter_[frame_id] == k_) {
+      return;
+    }
     counter_[frame_id] = k_;
     auto it = cache_queue_[1]->begin();
     while (it != cache_queue_[1]->end()) {
@@ -68,15 +72,17 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id) {
 }
 
 void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
-  BUSTUB_ASSERT(frame_id < (int32_t) replacer_size_, "Unexpect frame id");
+  BUSTUB_ASSERT(frame_id < (int32_t)replacer_size_, "Unexpect frame id");
+  std::scoped_lock<std::recursive_mutex> lock(latch_);
   if (set_evictable != evictable_[frame_id]) {
-    curr_size_ += (set_evictable-evictable_[frame_id]);
+    curr_size_ += (set_evictable - evictable_[frame_id]);
     evictable_[frame_id] = set_evictable;
   }
 }
 
 void LRUKReplacer::Remove(frame_id_t frame_id) {
-  BUSTUB_ASSERT(frame_id < (int32_t) replacer_size_, "Unexpect frame id");
+  BUSTUB_ASSERT(frame_id < (int32_t)replacer_size_, "Unexpect frame id");
+  std::scoped_lock<std::recursive_mutex> lock(latch_);
   std::shared_ptr<std::list<Query>> query_list = cache_queue_[0];
   if (counter_[frame_id] >= k_) {
     query_list = cache_queue_[1];
@@ -91,7 +97,6 @@ void LRUKReplacer::Remove(frame_id_t frame_id) {
   }
   counter_[frame_id] = 0;
   SetEvictable(frame_id, false);
-//  --filled_size_;
 }
 
 auto LRUKReplacer::Size() -> size_t { return curr_size_; }

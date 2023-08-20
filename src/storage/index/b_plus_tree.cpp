@@ -236,8 +236,6 @@ auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
     return INDEXITERATOR_TYPE(nullptr, nullptr);
   }
 
-  page_id_t page_id = root_page_id_;
-  page_id_t pre_page_id;
   Page *page = FindLeafPage(key, READ_MODE, nullptr);
   auto *leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
 
