@@ -24,7 +24,8 @@ namespace bustub {
 #define BPLUSTREE_TYPE BPlusTree<KeyType, ValueType, KeyComparator>
 
 #define READ_MODE 0
-#define WRITE_MODE 1
+#define INSERT_MODE 1
+#define DELETE_MODE 2
 
 #define BEFORE_ROOT_PAGE nullptr
 
@@ -89,6 +90,7 @@ class BPlusTree {
   auto FindLeafPage(const KeyType &key, int mode, Transaction *transaction) -> Page *;
   auto InsertUpforward(const KeyType &key, const ValueType &value, Page *page,
                        Transaction *transaction) -> bool;
+  auto DeleteUpforward(const KeyType &key, Page *page, Transaction *transaction) -> bool;
   auto ReleaseBeforePages(int mode, Transaction *transaction) -> void;
   auto ClearTransPages(int mode, Transaction *transaction) -> void;
   // member variable

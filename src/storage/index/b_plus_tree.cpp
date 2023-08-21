@@ -80,20 +80,20 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
   root_latch_.unlock();
 
   transaction->AddIntoPageSet(BEFORE_ROOT_PAGE);
-  page = FindLeafPage(key, WRITE_MODE, transaction);
+  page = FindLeafPage(key, INSERT_MODE, transaction);
   leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
   if (leaf_page->Exist(key, comparator_)) {
     return false;
   }
   if (!leaf_page->IsFull()) {
-    ClearTransPages(WRITE_MODE, transaction);
+    ClearTransPages(INSERT_MODE, transaction);
     res = leaf_page->Insert(key, value, comparator_);
     page->WUnlatch();
     buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
     return res;
   } else {
     res = InsertUpforward(key, value, page, transaction);
-    ClearTransPages(WRITE_MODE, transaction);
+    ClearTransPages(INSERT_MODE, transaction);
     return res;
   }
 }
@@ -190,7 +190,30 @@ auto BPLUSTREE_TYPE::InsertUpforward(const KeyType &key, const ValueType &value,
  * necessary.
  */
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {}
+void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
+  Page *page;
+  LeafPage *leaf_page;
+  if (IsEmpty()) {
+    return;
+  }
+  transaction->AddIntoPageSet(BEFORE_ROOT_PAGE);
+  page = FindLeafPage(key, DELETE_MODE, transaction);
+  leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
+  if (leaf_page->GetSize() > leaf_page->GetMaxSize() / 2) {
+    ClearTransPages(DELETE_MODE, transaction);
+    leaf_page->Delete(key, comparator_);
+    page->WUnlatch();
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
+  } else {
+    DeleteUpforward(key, page, transaction);
+    ClearTransPages(DELETE_MODE, transaction);
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::DeleteUpforward(const KeyType &key, bustub::Page *page, Transaction *transaction) -> bool {
+
+}
 
 /*****************************************************************************
  * INDEX ITERATOR
@@ -251,7 +274,7 @@ auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, int mode, bustub::Transact
   page_id_t page_id = root_page_id_;
   page_id_t pre_page_id;
   Page *page = buffer_pool_manager_->FetchPage(page_id);
-  mode == WRITE_MODE ? page->WLatch() : page->RLatch();
+  mode == READ_MODE ? page->RLatch() : page->WLatch();
   InternalPage *bpip;
   auto *bpp = reinterpret_cast<BPlusTreePage *>(page->GetData());
   while (!bpp->IsLeafPage()) {
@@ -265,18 +288,28 @@ auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, int mode, bustub::Transact
     }
     page_id = bpip->ValueAt(i - 1);
 
-    if (mode == WRITE_MODE) {
-      if (!bpip->IsFull()) {
-        // safe to insert
-        ReleaseBeforePages(WRITE_MODE, transaction);
-      }
-      transaction->AddIntoPageSet(page);
-    } else {
-      page->RUnlatch();
-      buffer_pool_manager_->UnpinPage(pre_page_id, false);
+    switch (mode) {
+      case INSERT_MODE : {
+        if (!bpip->IsFull()) {
+          // safe to insert
+          ReleaseBeforePages(INSERT_MODE, transaction);
+        }
+        transaction->AddIntoPageSet(page);
+      } break;
+      case DELETE_MODE : {
+        if (bpip->GetSize() > (bpip->GetMaxSize()+1) / 2) {
+          // safe to delete
+          ReleaseBeforePages(DELETE_MODE, transaction);
+        }
+        transaction->AddIntoPageSet(page);
+      } break;
+      default: {
+        page->RUnlatch();
+        buffer_pool_manager_->UnpinPage(pre_page_id, false);
+      } break;
     }
     page = buffer_pool_manager_->FetchPage(page_id);
-    mode == WRITE_MODE ? page->WLatch() : page->RLatch();
+    mode == READ_MODE ? page->RLatch() : page->WLatch();
     bpp = reinterpret_cast<BPlusTreePage *>(page->GetData());
   }
   return page;
@@ -291,7 +324,7 @@ auto BPLUSTREE_TYPE::ReleaseBeforePages(int mode, Transaction *transaction) -> v
   Page *page = page_set->back();
   while (page != BEFORE_ROOT_PAGE) {
     page_set->pop_back();
-    mode == WRITE_MODE ? page->WUnlatch() : page->RUnlatch();
+    page->WUnlatch();
     buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
   }
 }
@@ -305,7 +338,7 @@ auto BPLUSTREE_TYPE::ClearTransPages(int mode, Transaction *transaction) -> void
   Page *page = page_set->back();
   while (page != BEFORE_ROOT_PAGE) {
     page_set->pop_back();
-    mode == WRITE_MODE ? page->WUnlatch() : page->RUnlatch();
+    mode == READ_MODE ? page->RUnlatch() : page->WUnlatch();
     buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
   }
   page_set->pop_back();

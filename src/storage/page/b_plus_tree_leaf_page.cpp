@@ -90,7 +90,7 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::InsertAndSplit(const KeyType &key, const ValueType &value,
                                                 B_PLUS_TREE_LEAF_PAGE_TYPE *new_page,
                                                 const KeyComparator &comparator) -> void {
-  int pivot = (GetSize() - 1) > 1;
+  int pivot = (GetSize() + 1) > 1;
   KeyType pivot_key = array_[pivot].first;
   MappingType *new_array = new_page->GetArray();
 
@@ -114,6 +114,20 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::InsertAndSplit(const KeyType &key, const ValueT
 
   new_page->SetNextPageId(next_page_id_);
   next_page_id_ = new_page->GetPageId();
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::Delete(const KeyType &key, const KeyComparator &comparator) -> bool {
+  int idx;
+  for (idx = 0; idx < GetSize() && comparator(key, array_[idx].first) > 0; ++idx) {}
+  if (idx == GetSize() || comparator(key, array_[idx].first) < 0) {
+    return false;
+  }
+  for (++idx; idx < GetSize(); ++idx) {
+    array_[idx - 1] = array_[idx];
+  }
+  SetSize(idx - 1);
+  return true;
 }
 
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;

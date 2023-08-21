@@ -56,7 +56,7 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   auto Insert(const KeyType &key, const ValueType &value, const KeyComparator &comparator) -> bool;
   auto InsertAndSplit(const KeyType &key, const ValueType &value, B_PLUS_TREE_LEAF_PAGE_TYPE *new_page,
                       const KeyComparator &comparator) -> void;
-
+  auto Delete(const KeyType &key, const KeyComparator &comparator) -> bool;
  private:
   page_id_t next_page_id_;
   // Flexible array member for page data.
