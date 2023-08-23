@@ -90,7 +90,6 @@ class BPlusTree {
   auto FindLeafPage(const KeyType &key, int mode, Transaction *transaction) -> Page *;
   auto InsertUpforward(const KeyType &key, const ValueType &value, Page *page,
                        Transaction *transaction) -> bool;
-  auto DeleteUpforward(const KeyType &key, Page *page, Transaction *transaction) -> bool;
   auto ReleaseBeforePages(int mode, Transaction *transaction) -> void;
   auto ClearTransPages(int mode, Transaction *transaction) -> void;
   // member variable

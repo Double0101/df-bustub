@@ -191,28 +191,43 @@ auto BPLUSTREE_TYPE::InsertUpforward(const KeyType &key, const ValueType &value,
  */
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
-  Page *page;
+  Page *lower_page;
   LeafPage *leaf_page;
   if (IsEmpty()) {
     return;
   }
   transaction->AddIntoPageSet(BEFORE_ROOT_PAGE);
-  page = FindLeafPage(key, DELETE_MODE, transaction);
-  leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
-  if (leaf_page->GetSize() > leaf_page->GetMaxSize() / 2) {
-    ClearTransPages(DELETE_MODE, transaction);
-    leaf_page->Delete(key, comparator_);
-    page->WUnlatch();
-    buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
-  } else {
-    DeleteUpforward(key, page, transaction);
-    ClearTransPages(DELETE_MODE, transaction);
+  lower_page = FindLeafPage(key, DELETE_MODE, transaction);
+  leaf_page = reinterpret_cast<LeafPage *>(lower_page->GetData());
+  leaf_page->Delete(key, comparator_);
+  if (!leaf_page->IsRootPage() && leaf_page->GetSize() < (leaf_page->GetMaxSize() + 1) / 2) {
+    // TODO: wait to design
+    auto page_set = transaction->GetPageSet();
+    Page *upper_page = page_set->back();
+    page_set->pop_back();
+    KeyType rk = key;
+    auto *upper_ip = reinterpret_cast<InternalPage*>(upper_page->GetData());
+    auto *lower_bp = reinterpret_cast<BPlusTreePage*>(lower_page->GetData());
+    int idx = 0;
+    auto *array = upper_ip->GetArray();
+    while (array[idx].second != lower_page->GetPageId()) {
+      ++idx;
+    }
+    if (idx-1 >= 0) {
+      Page *left_page = buffer_pool_manager_->FetchPage(array[idx-1].second);
+      auto *ll_page = reinterpret_cast<LeafPage*>(left_page->GetData());
+      if (ll_page->GetSize() > (leaf_page->GetMaxSize() + 1) / 2) {
+        // borrow one
+      } else if (ll_page->GetSize() < (leaf_page->GetMaxSize() + 1) / 2) {
+        // merge
+      } else {
+
+      }
+    }
   }
-}
-
-INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::DeleteUpforward(const KeyType &key, bustub::Page *page, Transaction *transaction) -> bool {
-
+  lower_page->WUnlatch();
+  ClearTransPages(DELETE_MODE, transaction);
+  buffer_pool_manager_->UnpinPage(lower_page->GetPageId(), true);
 }
 
 /*****************************************************************************

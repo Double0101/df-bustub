@@ -78,16 +78,14 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Insert(const KeyType &key, const ValueType 
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::GetArray() -> MappingType * {
-  return array_;
-}
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::GetArray() -> MappingType * { return array_; }
 
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertAndSplit(const KeyType &key, const ValueType &value,
                                                     B_PLUS_TREE_INTERNAL_PAGE_TYPE *new_page,
                                                     const KeyComparator &comparator) -> KeyType {
   MappingType *new_array = new_page->GetArray();
-  int pivot = GetSize()/2 + 1;
+  int pivot = GetSize() / 2 + 1;
   int i;
   int j = 0;
   if (comparator(key, array_[pivot].first) > 0) {
@@ -102,10 +100,22 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertAndSplit(const KeyType &key, const Va
       new_array[j++] = array_[i];
     }
     new_page->SetSize(j);
-    SetSize(pivot-1);
+    SetSize(pivot - 1);
     Insert(key, value, comparator);
   }
   return new_array[0].first;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteAndMerge(KeyType &key, B_PLUS_TREE_INTERNAL_PAGE_TYPE *lower_page,
+                                                    const KeyComparator &comparator) -> bool {
+  int idx = 1;
+  while(idx < GetSize() && comparator(key, array_[idx].first) > 0) {
+    ++idx;
+  }
+  --idx;
+  // TODO: wait to design
+  return false;
 }
 
 // valuetype for internalNode should be page id_t
