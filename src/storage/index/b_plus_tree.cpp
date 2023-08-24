@@ -201,7 +201,6 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
   leaf_page = reinterpret_cast<LeafPage *>(lower_page->GetData());
   leaf_page->Delete(key, comparator_);
   if (!leaf_page->IsRootPage() && leaf_page->GetSize() < (leaf_page->GetMaxSize() + 1) / 2) {
-    // TODO: wait to design
     auto page_set = transaction->GetPageSet();
     Page *upper_page = page_set->back();
     page_set->pop_back();
@@ -213,21 +212,89 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
     while (array[idx].second != lower_page->GetPageId()) {
       ++idx;
     }
-    if (idx-1 >= 0) {
-      Page *left_page = buffer_pool_manager_->FetchPage(array[idx-1].second);
-      auto *ll_page = reinterpret_cast<LeafPage*>(left_page->GetData());
-      if (ll_page->GetSize() > (leaf_page->GetMaxSize() + 1) / 2) {
-        // borrow one
-      } else if (ll_page->GetSize() < (leaf_page->GetMaxSize() + 1) / 2) {
-        // merge
-      } else {
+    bool completed = LeafBorrow(idx, leaf_page, upper_ip);
+    if (!completed) {
+      completed = LeafMerge(idx, leaf_page, upper_ip);
 
-      }
     }
+
   }
   lower_page->WUnlatch();
   ClearTransPages(DELETE_MODE, transaction);
   buffer_pool_manager_->UnpinPage(lower_page->GetPageId(), true);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper_page) -> bool {
+  Page *mge_page;
+  LeafPage *mge_leaf_page;
+  bool res = false;
+
+  if (idx-1 >= 0) {
+    mge_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx-1));
+    mge_page->WLatch();
+    mge_leaf_page = reinterpret_cast<LeafPage *>(mge_page->GetData());
+    if (mge_leaf_page->GetSize() + leaf_page->GetSize() <= mge_leaf_page->GetMaxSize()) {
+      auto *array = leaf_page->GetArray();
+      for (int i = 0; i < leaf_page->GetSize(); ++i) {
+        array[i+mge_leaf_page->GetSize()] = array[i];
+        array[i] = mge_leaf_page->KeyValueAt(i);
+      }
+      leaf_page->SetSize(mge_leaf_page->GetSize()+leaf_page->GetSize());
+      upper_page->SetKeyAt(idx, array[0].first);
+      upper_page->Delete(idx-1);
+      res = true;
+    }
+    mge_page->WUnlatch();
+    if (res) {
+      buffer_pool_manager_->DeletePage(mge_page->GetPageId());
+    } else {
+      buffer_pool_manager_->UnpinPage(mge_page->GetPageId(), false);
+    }
+  }
+
+  // TODO: tomorrow
+
+  return res;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::LeafBorrow(int idx, LeafPage *leaf_page, InternalPage *upper_page) -> bool {
+  Page *brw_page;
+  LeafPage *brw_leaf_page;
+  bool res = false;
+
+  // borrow from left
+  if (idx-1 >= 0) {
+    brw_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx-1));
+    brw_page->WLatch();
+    brw_leaf_page = reinterpret_cast<LeafPage *>(brw_page->GetData());
+    if (brw_leaf_page->GetSize() > (brw_leaf_page->GetMaxSize() + 1) / 2) {
+      auto brw_one = brw_leaf_page->KeyValueAt(brw_leaf_page->GetSize()-1);
+      brw_leaf_page->SetSize(brw_leaf_page->GetSize()-1);
+      leaf_page->Insert(brw_one.first, brw_one.second, comparator_);
+      upper_page->KeyAt(idx) = leaf_page->KeyAt(0);
+      res = true;
+    }
+    brw_page->WUnlatch();
+    buffer_pool_manager_->UnpinPage(brw_page->GetPageId(), res);
+  }
+  // borrow from right
+  if (!res && idx+1 < upper_page->GetSize()) {
+    brw_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx+1));
+    brw_page->WLatch();
+    brw_leaf_page = reinterpret_cast<LeafPage *>(brw_page->GetData());
+    if (brw_leaf_page->GetSize() > (brw_leaf_page->GetMaxSize() + 1) / 2) {
+      auto brw_one = brw_leaf_page->KeyValueAt(0);
+      brw_leaf_page->SetSize(brw_leaf_page->GetSize()-1);
+      leaf_page->Insert(brw_one.first, brw_one.second, comparator_);
+      upper_page->KeyAt(idx+1) = brw_leaf_page->KeyAt(0);
+      res = true;
+    }
+    brw_page->WUnlatch();
+    buffer_pool_manager_->UnpinPage(brw_page->GetPageId(), res);
+  }
+  return res;
 }
 
 /*****************************************************************************

@@ -107,15 +107,11 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertAndSplit(const KeyType &key, const Va
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteAndMerge(KeyType &key, B_PLUS_TREE_INTERNAL_PAGE_TYPE *lower_page,
-                                                    const KeyComparator &comparator) -> bool {
-  int idx = 1;
-  while(idx < GetSize() && comparator(key, array_[idx].first) > 0) {
-    ++idx;
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Delete(int idx) -> void {
+  for (++idx; idx < GetSize(); ++idx) {
+    array_[idx-1] = array_[idx];
   }
-  --idx;
-  // TODO: wait to design
-  return false;
+  SetSize(idx-1);
 }
 
 // valuetype for internalNode should be page id_t

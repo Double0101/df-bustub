@@ -92,6 +92,8 @@ class BPlusTree {
                        Transaction *transaction) -> bool;
   auto ReleaseBeforePages(int mode, Transaction *transaction) -> void;
   auto ClearTransPages(int mode, Transaction *transaction) -> void;
+  auto LeafBorrow(int idx, LeafPage *leaf_page, InternalPage *upper_page) -> bool;
+  auto LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper_page) -> bool;
   // member variable
   std::string index_name_;
   page_id_t root_page_id_;
