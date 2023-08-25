@@ -200,49 +200,98 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
   lower_page = FindLeafPage(key, DELETE_MODE, transaction);
   leaf_page = reinterpret_cast<LeafPage *>(lower_page->GetData());
   leaf_page->Delete(key, comparator_);
-  if (!leaf_page->IsRootPage() && leaf_page->GetSize() < (leaf_page->GetMaxSize() + 1) / 2) {
+  if (!leaf_page->IsRootPage() && leaf_page->GetSize() < leaf_page->GetMinSize()) {
     auto page_set = transaction->GetPageSet();
     Page *upper_page = page_set->back();
     page_set->pop_back();
-    KeyType rk = key;
-    auto *upper_ip = reinterpret_cast<InternalPage*>(upper_page->GetData());
-    auto *lower_bp = reinterpret_cast<BPlusTreePage*>(lower_page->GetData());
+    auto *upper_ip = reinterpret_cast<InternalPage *>(upper_page->GetData());
     int idx = 0;
     auto *array = upper_ip->GetArray();
     while (array[idx].second != lower_page->GetPageId()) {
       ++idx;
     }
-    bool completed = LeafBorrow(idx, leaf_page, upper_ip);
-    if (!completed) {
-      completed = LeafMerge(idx, leaf_page, upper_ip);
-
+    if (!LeafBorrow(idx, leaf_page, upper_ip)) {
+      LeafMerge(idx, leaf_page, upper_ip);
+      InternalPage *lower_ip;
+      while (!upper_ip->IsRootPage() && upper_ip->GetSize() < upper_ip->GetMinSize()) {
+        lower_page->WUnlatch();
+        buffer_pool_manager_->UnpinPage(lower_page->GetPageId(), true);
+        lower_page = upper_page;
+        upper_page = page_set->back();
+        page_set->pop_back();
+        lower_ip = reinterpret_cast<InternalPage *>(lower_page->GetData());
+        upper_ip = reinterpret_cast<InternalPage *>(upper_page->GetData());
+        idx = 0;
+        array = upper_ip->GetArray();
+        while (array[idx].second != lower_page->GetPageId()) {
+          ++idx;
+        }
+        if (!InternalBorrow(idx, lower_ip, upper_ip)) {
+          InternalMerge(idx, lower_ip, upper_ip);
+        }
+      }
     }
-
   }
   lower_page->WUnlatch();
-  ClearTransPages(DELETE_MODE, transaction);
   buffer_pool_manager_->UnpinPage(lower_page->GetPageId(), true);
+  ClearTransPages(DELETE_MODE, transaction);
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper_page) -> bool {
+auto BPLUSTREE_TYPE::InternalBorrow(int idx, InternalPage *lower_page, InternalPage *upper_page) -> bool {
+  Page *brw_page;
+  InternalPage *brw_inte_page;
+  bool res = false;
+  if (idx > 0) {
+    brw_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx - 1));
+    brw_page->WLatch();
+    brw_inte_page = reinterpret_cast<InternalPage *>(brw_page->GetData());
+    if (brw_inte_page->GetSize() > brw_inte_page->GetMinSize()) {
+      auto brw_one = brw_inte_page->KeyValueAt(brw_inte_page->GetSize() - 1);
+      brw_inte_page->SetSize(brw_inte_page->GetSize() - 1);
+      lower_page->Insert(brw_one.first, brw_one.second, comparator_);
+      upper_page->SetKeyAt(idx, lower_page->KeyAt(0));
+      res = true;
+    }
+    brw_page->WUnlatch();
+    buffer_pool_manager_->UnpinPage(brw_page->GetPageId(), res);
+  }
+  if (!res && idx + 1 < upper_page->GetSize()) {
+    brw_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx + 1));
+    brw_page->WLatch();
+    brw_inte_page = reinterpret_cast<InternalPage *>(brw_page->GetData());
+    if (brw_inte_page->GetSize() > brw_inte_page->GetMinSize()) {
+      auto brw_one = brw_inte_page->KeyValueAt(0);
+      brw_inte_page->Delete(0);
+      lower_page->Insert(brw_one.first, brw_one.second, comparator_);
+      upper_page->SetKeyAt(idx+1, brw_inte_page->KeyAt(0));
+      res = true;
+    }
+    brw_page->WUnlatch();
+    buffer_pool_manager_->UnpinPage(brw_page->GetPageId(), res);
+  }
+  return res;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::InternalMerge(int idx, InternalPage *lower_page, InternalPage *upper_page) -> bool {
   Page *mge_page;
-  LeafPage *mge_leaf_page;
+  InternalPage  *mge_inte_page;
   bool res = false;
 
-  if (idx-1 >= 0) {
-    mge_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx-1));
+  if (idx > 0) {
+    mge_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx - 1));
     mge_page->WLatch();
-    mge_leaf_page = reinterpret_cast<LeafPage *>(mge_page->GetData());
-    if (mge_leaf_page->GetSize() + leaf_page->GetSize() <= mge_leaf_page->GetMaxSize()) {
-      auto *array = leaf_page->GetArray();
-      for (int i = 0; i < leaf_page->GetSize(); ++i) {
-        array[i+mge_leaf_page->GetSize()] = array[i];
-        array[i] = mge_leaf_page->KeyValueAt(i);
+    mge_inte_page = reinterpret_cast<InternalPage *>(mge_page->GetData());
+    if (mge_inte_page->GetSize() + lower_page->GetSize() <= lower_page->GetMaxSize()) {
+      auto *array = lower_page->GetArray();
+      for (int i = 0; i < lower_page->GetSize(); ++i) {
+        array[i + mge_inte_page->GetSize()] = array[i];
+        array[i] = mge_inte_page->KeyValueAt(i);
       }
-      leaf_page->SetSize(mge_leaf_page->GetSize()+leaf_page->GetSize());
+      lower_page->SetSize(mge_inte_page->GetSize() + lower_page->GetSize());
       upper_page->SetKeyAt(idx, array[0].first);
-      upper_page->Delete(idx-1);
+      upper_page->Delete(idx - 1);
       res = true;
     }
     mge_page->WUnlatch();
@@ -253,8 +302,78 @@ auto BPLUSTREE_TYPE::LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper
     }
   }
 
-  // TODO: tomorrow
+  if (!res && idx + 1 < upper_page->GetSize()) {
+    mge_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx + 1));
+    mge_page->WLatch();
+    mge_inte_page = reinterpret_cast<InternalPage *>(mge_page->GetData());
+    if (mge_inte_page->GetSize() + lower_page->GetSize() <= mge_inte_page->GetMaxSize()) {
+      auto *array = lower_page->GetArray();
+      for (int i = 0; i < mge_inte_page->GetSize(); ++i) {
+        array[i + lower_page->GetSize()] = mge_inte_page->KeyValueAt(i);
+      }
+      lower_page->SetSize(mge_inte_page->GetSize() + lower_page->GetSize());
+      upper_page->Delete(idx + 1);
+      res = true;
+    }
+    mge_page->WUnlatch();
+    if (res) {
+      buffer_pool_manager_->DeletePage(mge_page->GetPageId());
+    } else {
+      buffer_pool_manager_->UnpinPage(mge_page->GetPageId(), false);
+    }
+  }
+  return res;
+}
 
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper_page) -> bool {
+  Page *mge_page;
+  LeafPage *mge_leaf_page;
+  bool res = false;
+
+  if (idx > 0) {
+    mge_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx - 1));
+    mge_page->WLatch();
+    mge_leaf_page = reinterpret_cast<LeafPage *>(mge_page->GetData());
+    if (mge_leaf_page->GetSize() + leaf_page->GetSize() <= mge_leaf_page->GetMaxSize()) {
+      auto *array = leaf_page->GetArray();
+      for (int i = 0; i < leaf_page->GetSize(); ++i) {
+        array[i + mge_leaf_page->GetSize()] = array[i];
+        array[i] = mge_leaf_page->KeyValueAt(i);
+      }
+      leaf_page->SetSize(mge_leaf_page->GetSize() + leaf_page->GetSize());
+      upper_page->SetKeyAt(idx, array[0].first);
+      upper_page->Delete(idx - 1);
+      res = true;
+    }
+    mge_page->WUnlatch();
+    if (res) {
+      buffer_pool_manager_->DeletePage(mge_page->GetPageId());
+    } else {
+      buffer_pool_manager_->UnpinPage(mge_page->GetPageId(), false);
+    }
+  }
+
+  if (!res && idx + 1 < upper_page->GetSize()) {
+    mge_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx + 1));
+    mge_page->WLatch();
+    mge_leaf_page = reinterpret_cast<LeafPage *>(mge_page->GetData());
+    if (mge_leaf_page->GetSize() + leaf_page->GetSize() <= mge_leaf_page->GetMaxSize()) {
+      auto *array = leaf_page->GetArray();
+      for (int i = 0; i < mge_leaf_page->GetSize(); ++i) {
+        array[i + leaf_page->GetSize()] = mge_leaf_page->KeyValueAt(i);
+      }
+      leaf_page->SetSize(mge_leaf_page->GetSize() + leaf_page->GetSize());
+      upper_page->Delete(idx + 1);
+      res = true;
+    }
+    mge_page->WUnlatch();
+    if (res) {
+      buffer_pool_manager_->DeletePage(mge_page->GetPageId());
+    } else {
+      buffer_pool_manager_->UnpinPage(mge_page->GetPageId(), false);
+    }
+  }
   return res;
 }
 
@@ -265,30 +384,30 @@ auto BPLUSTREE_TYPE::LeafBorrow(int idx, LeafPage *leaf_page, InternalPage *uppe
   bool res = false;
 
   // borrow from left
-  if (idx-1 >= 0) {
-    brw_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx-1));
+  if (idx - 1 >= 0) {
+    brw_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx - 1));
     brw_page->WLatch();
     brw_leaf_page = reinterpret_cast<LeafPage *>(brw_page->GetData());
-    if (brw_leaf_page->GetSize() > (brw_leaf_page->GetMaxSize() + 1) / 2) {
-      auto brw_one = brw_leaf_page->KeyValueAt(brw_leaf_page->GetSize()-1);
-      brw_leaf_page->SetSize(brw_leaf_page->GetSize()-1);
+    if (brw_leaf_page->GetSize() > brw_leaf_page->GetMinSize()) {
+      auto brw_one = brw_leaf_page->KeyValueAt(brw_leaf_page->GetSize() - 1);
+      brw_leaf_page->SetSize(brw_leaf_page->GetSize() - 1);
       leaf_page->Insert(brw_one.first, brw_one.second, comparator_);
-      upper_page->KeyAt(idx) = leaf_page->KeyAt(0);
+      upper_page->SetKeyAt(idx, leaf_page->KeyAt(0));
       res = true;
     }
     brw_page->WUnlatch();
     buffer_pool_manager_->UnpinPage(brw_page->GetPageId(), res);
   }
   // borrow from right
-  if (!res && idx+1 < upper_page->GetSize()) {
-    brw_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx+1));
+  if (!res && idx + 1 < upper_page->GetSize()) {
+    brw_page = buffer_pool_manager_->FetchPage(upper_page->ValueAt(idx + 1));
     brw_page->WLatch();
     brw_leaf_page = reinterpret_cast<LeafPage *>(brw_page->GetData());
-    if (brw_leaf_page->GetSize() > (brw_leaf_page->GetMaxSize() + 1) / 2) {
+    if (brw_leaf_page->GetSize() > brw_leaf_page->GetMinSize()) {
       auto brw_one = brw_leaf_page->KeyValueAt(0);
-      brw_leaf_page->SetSize(brw_leaf_page->GetSize()-1);
+      brw_leaf_page->Delete(0);
       leaf_page->Insert(brw_one.first, brw_one.second, comparator_);
-      upper_page->KeyAt(idx+1) = brw_leaf_page->KeyAt(0);
+      upper_page->SetKeyAt(idx + 1, brw_leaf_page->KeyAt(0));
       res = true;
     }
     brw_page->WUnlatch();
@@ -371,15 +490,15 @@ auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, int mode, bustub::Transact
     page_id = bpip->ValueAt(i - 1);
 
     switch (mode) {
-      case INSERT_MODE : {
+      case INSERT_MODE: {
         if (!bpip->IsFull()) {
           // safe to insert
           ReleaseBeforePages(INSERT_MODE, transaction);
         }
         transaction->AddIntoPageSet(page);
       } break;
-      case DELETE_MODE : {
-        if (bpip->GetSize() > (bpip->GetMaxSize()+1) / 2) {
+      case DELETE_MODE: {
+        if (bpip->GetSize() > (bpip->GetMaxSize() + 1) / 2) {
           // safe to delete
           ReleaseBeforePages(DELETE_MODE, transaction);
         }

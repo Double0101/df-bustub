@@ -61,6 +61,12 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyValueAt(int index) const -> MappingType {
+  BUSTUB_ASSERT(index < GetSize(), "Invalid index in BPlusTreeInternalPage");
+  return array_[index];
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetValueAt(int index, const ValueType &value) {
   BUSTUB_ASSERT(index < GetSize(), "Invalid index in BPlusTreeInternalPage");
   array_[index].second = value;

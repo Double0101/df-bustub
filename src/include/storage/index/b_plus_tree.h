@@ -88,10 +88,11 @@ class BPlusTree {
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
   auto FindLeafPage(const KeyType &key, int mode, Transaction *transaction) -> Page *;
-  auto InsertUpforward(const KeyType &key, const ValueType &value, Page *page,
-                       Transaction *transaction) -> bool;
+  auto InsertUpforward(const KeyType &key, const ValueType &value, Page *page, Transaction *transaction) -> bool;
   auto ReleaseBeforePages(int mode, Transaction *transaction) -> void;
   auto ClearTransPages(int mode, Transaction *transaction) -> void;
+  auto InternalBorrow(int idx, InternalPage *lower_page, InternalPage *upper_page) -> bool;
+  auto InternalMerge(int idx, InternalPage *lower_page, InternalPage *upper_page) -> bool;
   auto LeafBorrow(int idx, LeafPage *leaf_page, InternalPage *upper_page) -> bool;
   auto LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper_page) -> bool;
   // member variable
