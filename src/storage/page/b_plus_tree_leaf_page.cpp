@@ -90,25 +90,25 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::InsertAndSplit(const KeyType &key, const ValueType &value,
                                                 B_PLUS_TREE_LEAF_PAGE_TYPE *new_page,
                                                 const KeyComparator &comparator) -> void {
-  int pivot = (GetSize() + 1) > 1;
-  KeyType pivot_key = array_[pivot].first;
+  int pivot = (GetSize() + 1) >> 1;
+  KeyType pre_pivot_key = array_[pivot - 1].first;
   MappingType *new_array = new_page->GetArray();
 
   int i;
   int j = 0;
-  if (comparator(key, pivot_key) > 0) {
-    for (i = pivot + 1; i < GetSize(); ++i) {
-      new_array[j++] = array_[i];
-    }
-    new_page->SetSize(j);
-    new_page->Insert(key, value, comparator);
-    SetSize(pivot + 1);
-  } else {
+  if (comparator(key, pre_pivot_key) > 0) {
     for (i = pivot; i < GetSize(); ++i) {
       new_array[j++] = array_[i];
     }
     new_page->SetSize(j);
+    new_page->Insert(key, value, comparator);
     SetSize(pivot);
+  } else {
+    for (i = pivot - 1; i < GetSize(); ++i) {
+      new_array[j++] = array_[i];
+    }
+    new_page->SetSize(j);
+    SetSize(pivot - 1);
     Insert(key, value, comparator);
   }
 

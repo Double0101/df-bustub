@@ -154,10 +154,13 @@ auto BPLUSTREE_TYPE::InsertUpforward(const KeyType &key, const ValueType &value,
     }
     upper_page->WUnlatch();
     buffer_pool_manager_->UnpinPage(upper_page->GetPageId(), true);
+    upper_page = page_set->back();
+    page_set->pop_back();
   }
 
   // when upforward insert step by step come into root page and root page full
   // create new root page replace old one
+  root_latch_.lock();
   new_page = buffer_pool_manager_->NewPage(&new_page_id);
   upper_bp = reinterpret_cast<InternalPage *>(new_page->GetData());
   upper_bp->Init(new_page_id, INVALID_PAGE_ID, internal_max_size_);
@@ -176,6 +179,7 @@ auto BPLUSTREE_TYPE::InsertUpforward(const KeyType &key, const ValueType &value,
   buffer_pool_manager_->UnpinPage(new_page_id, true);
   root_page_id_ = new_page_id;
   UpdateRootPageId(1);
+  root_latch_.unlock();
   return true;
 }
 
@@ -483,7 +487,7 @@ auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, int mode, bustub::Transact
     pre_page_id = page_id;
     int i = 1;
     if (bpip->GetSize() > 1) {
-      while (i <= bpip->GetSize() && comparator_(key, bpip->KeyAt(i)) >= 0) {
+      while (i < bpip->GetSize() && comparator_(key, bpip->KeyAt(i)) >= 0) {
         ++i;
       }
     }

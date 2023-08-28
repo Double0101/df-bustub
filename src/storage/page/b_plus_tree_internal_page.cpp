@@ -91,10 +91,11 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertAndSplit(const KeyType &key, const Va
                                                     B_PLUS_TREE_INTERNAL_PAGE_TYPE *new_page,
                                                     const KeyComparator &comparator) -> KeyType {
   MappingType *new_array = new_page->GetArray();
-  int pivot = GetSize() / 2 + 1;
+  int pivot = (GetSize() + 1) >> 1;
+  KeyType pre_pivot_key = array_[pivot - 1].first;
   int i;
   int j = 0;
-  if (comparator(key, array_[pivot].first) > 0) {
+  if (comparator(key, pre_pivot_key) > 0) {
     for (i = pivot; i < GetSize(); ++i) {
       new_array[j++] = array_[i];
     }
