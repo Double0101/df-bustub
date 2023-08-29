@@ -35,14 +35,19 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
   if (IsEmpty()) {
     return false;
   }
-
-  INDEXITERATOR_TYPE it = Begin(key);
-  const MappingType &kv = *it;
-  if (comparator_(key, kv.first) == 0) {
-    result->push_back(kv.second);
-    return true;
+  Page *page = FindLeafPage(key, READ_MODE, transaction);
+  auto *leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
+  int idx = 0;
+  while (idx < leaf_page->GetSize() && comparator_(key, leaf_page->KeyAt(idx)) > 0) {
+    ++idx;
   }
-  return false;
+  bool res = comparator_(key, leaf_page->KeyAt(idx)) == 0;
+  if (res) {
+    result->push_back(leaf_page->ValueAt(idx));
+  }
+  page->RUnlatch();
+  ClearTransPages(READ_MODE, transaction);
+  return res;
 }
 
 /*****************************************************************************
@@ -268,7 +273,7 @@ auto BPLUSTREE_TYPE::InternalBorrow(int idx, InternalPage *lower_page, InternalP
       auto brw_one = brw_inte_page->KeyValueAt(0);
       brw_inte_page->Delete(0);
       lower_page->Insert(brw_one.first, brw_one.second, comparator_);
-      upper_page->SetKeyAt(idx+1, brw_inte_page->KeyAt(0));
+      upper_page->SetKeyAt(idx + 1, brw_inte_page->KeyAt(0));
       res = true;
     }
     brw_page->WUnlatch();
@@ -280,7 +285,7 @@ auto BPLUSTREE_TYPE::InternalBorrow(int idx, InternalPage *lower_page, InternalP
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::InternalMerge(int idx, InternalPage *lower_page, InternalPage *upper_page) -> bool {
   Page *mge_page;
-  InternalPage  *mge_inte_page;
+  InternalPage *mge_inte_page;
   bool res = false;
 
   if (idx > 0) {
@@ -431,12 +436,13 @@ auto BPLUSTREE_TYPE::LeafBorrow(int idx, LeafPage *leaf_page, InternalPage *uppe
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
   if (IsEmpty()) {
-    return INDEXITERATOR_TYPE(nullptr, nullptr);
+    return End();
   }
 
   page_id_t page_id = root_page_id_;
   page_id_t pre_page_id;
   Page *page = buffer_pool_manager_->FetchPage(page_id);
+  page->RLatch();
   InternalPage *bpip;
   auto *bpp = reinterpret_cast<BPlusTreePage *>(page->GetData());
   while (!bpp->IsLeafPage()) {
@@ -444,13 +450,14 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
     pre_page_id = page_id;
     page_id = bpip->ValueAt(0);
 
+    page->RUnlatch();
     buffer_pool_manager_->UnpinPage(pre_page_id, false);
     page = buffer_pool_manager_->FetchPage(page_id);
+    page->RLatch();
     bpp = reinterpret_cast<BPlusTreePage *>(page->GetData());
   }
   auto *leaf_page = reinterpret_cast<LeafPage *>(bpp);
-
-  return INDEXITERATOR_TYPE(leaf_page, buffer_pool_manager_);
+  return INDEXITERATOR_TYPE(leaf_page, 0, page, index_name_, buffer_pool_manager_);
 }
 
 /*
@@ -461,17 +468,16 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
   if (IsEmpty()) {
-    return INDEXITERATOR_TYPE(nullptr, nullptr);
+    return End();
   }
-
   Page *page = FindLeafPage(key, READ_MODE, nullptr);
   auto *leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
-
-  INDEXITERATOR_TYPE it(leaf_page, buffer_pool_manager_);
-  while (it != End() && comparator_(key, (*it).first) > 0) {
-    ++it;
+  int idx = 0;
+  while (idx < leaf_page->GetSize() && comparator_(key, leaf_page->KeyAt(idx)) > 0) {
+    ++idx;
   }
-  return it;
+  return idx < leaf_page->GetSize() ? INDEXITERATOR_TYPE(leaf_page, idx, page, index_name_, buffer_pool_manager_)
+                                    : End();
 }
 
 INDEX_TEMPLATE_ARGUMENTS
@@ -536,6 +542,9 @@ auto BPLUSTREE_TYPE::ReleaseBeforePages(int mode, Transaction *transaction) -> v
 
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::ClearTransPages(int mode, Transaction *transaction) -> void {
+  if (transaction == nullptr) {
+    return;
+  }
   auto page_set = transaction->GetPageSet();
   if (page_set->empty()) {
     return;
@@ -555,7 +564,9 @@ auto BPLUSTREE_TYPE::ClearTransPages(int mode, Transaction *transaction) -> void
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(nullptr, nullptr); }
+auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE {
+  return INDEXITERATOR_TYPE(nullptr, -1, nullptr, index_name_, nullptr);
+}
 
 /**
  * @return Page id of the root of this tree

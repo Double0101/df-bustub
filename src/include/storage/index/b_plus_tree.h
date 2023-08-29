@@ -87,7 +87,7 @@ class BPlusTree {
   void ToGraph(BPlusTreePage *page, BufferPoolManager *bpm, std::ofstream &out) const;
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
-  auto FindLeafPage(const KeyType &key, int mode, Transaction *transaction) -> Page *;
+  auto FindLeafPage(const KeyType &key, int mode, Transaction *transaction = nullptr) -> Page *;
   auto InsertUpforward(const KeyType &key, const ValueType &value, Page *page, Transaction *transaction) -> bool;
   auto ReleaseBeforePages(int mode, Transaction *transaction) -> void;
   auto ClearTransPages(int mode, Transaction *transaction) -> void;

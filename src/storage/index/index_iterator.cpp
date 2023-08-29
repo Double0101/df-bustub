@@ -12,23 +12,26 @@ namespace bustub {
  * set your own input parameters
  */
 INDEX_TEMPLATE_ARGUMENTS
-INDEXITERATOR_TYPE::IndexIterator(B_PLUS_TREE_LEAF_PAGE_TYPE *leaf_page, BufferPoolManager *buffer_pool_manager)
+INDEXITERATOR_TYPE::IndexIterator(B_PLUS_TREE_LEAF_PAGE_TYPE *leaf_page, int index, Page *page,
+                                  std::string index_name, BufferPoolManager *buffer_pool_manager)
     : leaf_page_(leaf_page), array_(leaf_page->GetArray()) {
   buffer_pool_manager_ = buffer_pool_manager;
-  cur_idx_ = 0;
+  cur_idx_ = index;
+  cur_page_ = page;
+  index_name_ = index_name;
 };
 
 INDEX_TEMPLATE_ARGUMENTS
 INDEXITERATOR_TYPE::~IndexIterator() {
-  if (leaf_page_ != nullptr && leaf_page_->GetPageId() != INVALID_PAGE_ID) {
-    // TODO: is_dirty may not be false
-    buffer_pool_manager_->UnpinPage(leaf_page_->GetPageId(), false);
+  if (cur_page_ != nullptr) {
+    cur_page_->RUnlatch();
+    buffer_pool_manager_->UnpinPage(cur_page_->GetPageId(), false);
   }
 };  // NOLINT
 
 INDEX_TEMPLATE_ARGUMENTS
 auto INDEXITERATOR_TYPE::IsEnd() -> bool {
-  return cur_idx_ == leaf_page_->GetSize() && leaf_page_->GetNextPageId() == INVALID_PAGE_ID;
+  return (cur_idx_ == leaf_page_->GetSize() && leaf_page_->GetNextPageId() == INVALID_PAGE_ID) || cur_idx_ == -1;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
@@ -36,14 +39,20 @@ auto INDEXITERATOR_TYPE::operator*() -> const MappingType & { return array_[cur_
 
 INDEX_TEMPLATE_ARGUMENTS
 auto INDEXITERATOR_TYPE::operator++() -> INDEXITERATOR_TYPE & {
+  if (cur_idx_ == -1) { return *this; }
   ++cur_idx_;
   if (cur_idx_ == leaf_page_->GetSize()) {
-    if (leaf_page_->GetNextPageId() != INVALID_PAGE_ID) {
-      page_id_t next_page = leaf_page_->GetNextPageId();
-      // TODO: is_dirty may not be false
-      buffer_pool_manager_->UnpinPage(leaf_page_->GetPageId(), false);
-      Page *page = buffer_pool_manager_->FetchPage(next_page);
-      leaf_page_ = reinterpret_cast<B_PLUS_TREE_LEAF_PAGE_TYPE*>(page->GetData());
+    page_id_t next_page = leaf_page_->GetNextPageId();
+    cur_page_->RUnlatch();
+    buffer_pool_manager_->UnpinPage(cur_page_->GetPageId(), false);
+    cur_page_ = nullptr;
+    leaf_page_ = nullptr;
+    array_ = nullptr;
+    cur_idx_ = -1;
+    if (next_page != INVALID_PAGE_ID) {
+      cur_page_ = buffer_pool_manager_->FetchPage(next_page);
+      cur_page_->RLatch();
+      leaf_page_ = reinterpret_cast<B_PLUS_TREE_LEAF_PAGE_TYPE *>(cur_page_->GetData());
       array_ = leaf_page_->GetArray();
       cur_idx_ = 0;
     }
