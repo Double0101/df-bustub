@@ -41,7 +41,7 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
   while (idx < leaf_page->GetSize() && comparator_(key, leaf_page->KeyAt(idx)) > 0) {
     ++idx;
   }
-  bool res = comparator_(key, leaf_page->KeyAt(idx)) == 0;
+  bool res = idx < leaf_page->GetSize() && comparator_(key, leaf_page->KeyAt(idx)) == 0;
   if (res) {
     result->push_back(leaf_page->ValueAt(idx));
   }
@@ -123,11 +123,11 @@ auto BPLUSTREE_TYPE::InsertUpforward(const KeyType &key, const ValueType &value,
   auto page_set = transaction->GetPageSet();
   Page *upper_page = page_set->back();
   Page *lower_page;
-  page_set->pop_back();
   BPlusTreePage *lower_bp;
   InternalPage *upper_bp;
   InternalPage *upper_new_bp;
   while (upper_page != BEFORE_ROOT_PAGE) {
+    page_set->pop_back();
     upper_bp = reinterpret_cast<InternalPage *>(upper_page->GetData());
     if (!upper_bp->IsFull()) {
       upper_bp->Insert(new_map.first, new_map.second, comparator_);
@@ -209,6 +209,17 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
   lower_page = FindLeafPage(key, DELETE_MODE, transaction);
   leaf_page = reinterpret_cast<LeafPage *>(lower_page->GetData());
   leaf_page->Delete(key, comparator_);
+
+  if (leaf_page->IsRootPage() && leaf_page->GetSize() == 0) {
+    ClearTransPages(DELETE_MODE, transaction);
+    root_latch_.lock();
+    root_page_id_ = INVALID_PAGE_ID;
+    lower_page->WUnlatch();
+    buffer_pool_manager_->DeletePage(lower_page->GetPageId());
+    root_latch_.unlock();
+    return;
+  }
+
   if (!leaf_page->IsRootPage() && leaf_page->GetSize() < leaf_page->GetMinSize()) {
     auto page_set = transaction->GetPageSet();
     Page *upper_page = page_set->back();
