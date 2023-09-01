@@ -116,6 +116,7 @@ auto BPLUSTREE_TYPE::InsertUpforward(const KeyType &key, const ValueType &value,
   page->WUnlatch();
   buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
   // the pair insert into up page
+  std::pair<KeyType, page_id_t> ori_map = std::make_pair(leaf_page->KeyAt(0), leaf_page->GetPageId());
   std::pair<KeyType, page_id_t> new_map = std::make_pair(new_leaf->KeyAt(0), new_page_id);
   buffer_pool_manager_->UnpinPage(new_page_id, true);
 
@@ -145,9 +146,11 @@ auto BPLUSTREE_TYPE::InsertUpforward(const KeyType &key, const ValueType &value,
     }
     new_page = buffer_pool_manager_->NewPage(&new_page_id);
     upper_new_bp = reinterpret_cast<InternalPage *>(new_page->GetData());
-    upper_new_bp->Init(new_page_id, INVALID_PAGE_ID, leaf_max_size_);
+    upper_new_bp->Init(new_page_id, INVALID_PAGE_ID, internal_max_size_);
     new_map.first = upper_bp->InsertAndSplit(new_map.first, new_map.second, upper_new_bp, comparator_);
     new_map.second = new_page_id;
+    ori_map.first = upper_bp->KeyAt(0);
+    ori_map.second = upper_bp->GetPageId();
     // update parent page id in lower page
     for (int i = 0; i < upper_new_bp->GetSize(); ++i) {
       lower_page = buffer_pool_manager_->FetchPage(upper_new_bp->ValueAt(i));
@@ -160,7 +163,6 @@ auto BPLUSTREE_TYPE::InsertUpforward(const KeyType &key, const ValueType &value,
     upper_page->WUnlatch();
     buffer_pool_manager_->UnpinPage(upper_page->GetPageId(), true);
     upper_page = page_set->back();
-    page_set->pop_back();
   }
 
   // when upforward insert step by step come into root page and root page full
@@ -170,7 +172,8 @@ auto BPLUSTREE_TYPE::InsertUpforward(const KeyType &key, const ValueType &value,
   upper_bp = reinterpret_cast<InternalPage *>(new_page->GetData());
   upper_bp->Init(new_page_id, INVALID_PAGE_ID, internal_max_size_);
   upper_bp->SetSize(2);
-  upper_bp->SetValueAt(0, root_page_id_);
+  upper_bp->SetKeyAt(0, ori_map.first);
+  upper_bp->SetValueAt(0, ori_map.second);
   upper_bp->SetKeyAt(1, new_map.first);
   upper_bp->SetValueAt(1, new_map.second);
   for (int i = 0; i < upper_bp->GetSize(); ++i) {
@@ -214,6 +217,7 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
     ClearTransPages(DELETE_MODE, transaction);
     root_latch_.lock();
     root_page_id_ = INVALID_PAGE_ID;
+    UpdateRootPageId();
     lower_page->WUnlatch();
     buffer_pool_manager_->DeletePage(lower_page->GetPageId());
     root_latch_.unlock();
@@ -250,6 +254,19 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
           InternalMerge(idx, lower_ip, upper_ip);
         }
       }
+    }
+    if (upper_ip->IsRootPage() && upper_ip->GetSize() == 1) {
+      // update root page
+      root_latch_.lock();
+      upper_page->WUnlatch();
+      buffer_pool_manager_->DeletePage(root_page_id_);
+      root_page_id_ = lower_page->GetPageId();
+      UpdateRootPageId();
+      root_latch_.unlock();
+    } else {
+      // unlock upper page
+      upper_page->WUnlatch();
+      buffer_pool_manager_->UnpinPage(upper_page->GetPageId(), true);
     }
   }
   lower_page->WUnlatch();
@@ -565,6 +582,7 @@ auto BPLUSTREE_TYPE::ClearTransPages(int mode, Transaction *transaction) -> void
     page_set->pop_back();
     mode == READ_MODE ? page->RUnlatch() : page->WUnlatch();
     buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+    page = page_set->back();
   }
   page_set->pop_back();
 }
