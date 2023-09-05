@@ -261,6 +261,8 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
       upper_page->WUnlatch();
       buffer_pool_manager_->DeletePage(root_page_id_);
       root_page_id_ = lower_page->GetPageId();
+      BPlusTreePage *btp = reinterpret_cast<BPlusTreePage *>(lower_page);
+      btp->SetParentPageId(INVALID_PAGE_ID);
       UpdateRootPageId();
       root_latch_.unlock();
     } else {
@@ -374,7 +376,7 @@ auto BPLUSTREE_TYPE::LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper
     mge_leaf_page = reinterpret_cast<LeafPage *>(mge_page->GetData());
     if (mge_leaf_page->GetSize() + leaf_page->GetSize() <= mge_leaf_page->GetMaxSize()) {
       auto *array = leaf_page->GetArray();
-      for (int i = 0; i < leaf_page->GetSize(); ++i) {
+      for (int i = 0; i < mge_leaf_page->GetSize(); ++i) {
         array[i + mge_leaf_page->GetSize()] = array[i];
         array[i] = mge_leaf_page->KeyValueAt(i);
       }

@@ -65,6 +65,7 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id) {
         cache_queue_[1]->erase(it);
         return;
       }
+      ++it;
     }
   } else {
     cache_queue_[0]->emplace_back(frame_id, curr_time_++);
