@@ -289,6 +289,14 @@ auto BPLUSTREE_TYPE::InternalBorrow(int idx, InternalPage *lower_page, InternalP
       auto brw_one = brw_inte_page->KeyValueAt(brw_inte_page->GetSize() - 1);
       brw_inte_page->SetSize(brw_inte_page->GetSize() - 1);
       lower_page->Insert(brw_one.first, brw_one.second, comparator_);
+      // update parent page id for borrow page
+      Page *son = buffer_pool_manager_->FetchPage(brw_one.second);
+      son->WLatch();
+      auto *bp_son = reinterpret_cast<BPlusTreePage*>(son->GetData());
+      bp_son->SetParentPageId(lower_page->GetPageId());
+      son->WUnlatch();
+      buffer_pool_manager_->UnpinPage(brw_one.second, true);
+
       upper_page->SetKeyAt(idx, lower_page->KeyAt(0));
       res = true;
     }
@@ -303,6 +311,14 @@ auto BPLUSTREE_TYPE::InternalBorrow(int idx, InternalPage *lower_page, InternalP
       auto brw_one = brw_inte_page->KeyValueAt(0);
       brw_inte_page->Delete(0);
       lower_page->Insert(brw_one.first, brw_one.second, comparator_);
+
+      Page *son = buffer_pool_manager_->FetchPage(brw_one.second);
+      son->WLatch();
+      auto *bp_son = reinterpret_cast<BPlusTreePage*>(son->GetData());
+      bp_son->SetParentPageId(lower_page->GetPageId());
+      son->WUnlatch();
+      buffer_pool_manager_->UnpinPage(brw_one.second, true);
+
       upper_page->SetKeyAt(idx + 1, brw_inte_page->KeyAt(0));
       res = true;
     }
@@ -324,9 +340,21 @@ auto BPLUSTREE_TYPE::InternalMerge(int idx, InternalPage *lower_page, InternalPa
     mge_inte_page = reinterpret_cast<InternalPage *>(mge_page->GetData());
     if (mge_inte_page->GetSize() + lower_page->GetSize() <= lower_page->GetMaxSize()) {
       auto *array = lower_page->GetArray();
-      for (int i = 0; i < lower_page->GetSize(); ++i) {
+      for (int i = lower_page->GetSize() - 1; i >= 0; --i) {
         array[i + mge_inte_page->GetSize()] = array[i];
+      }
+      for (int i = 0; i < mge_inte_page->GetSize(); ++i) {
         array[i] = mge_inte_page->KeyValueAt(i);
+      }
+      Page *son;
+      BPlusTreePage *bp_son;
+      for (int i = 0; i < mge_inte_page->GetSize(); ++i) {
+        son = buffer_pool_manager_->FetchPage(array[i].second);
+        son->WLatch();
+        bp_son = reinterpret_cast<BPlusTreePage*>(son->GetData());
+        bp_son->SetParentPageId(lower_page->GetPageId());
+        son->WUnlatch();
+        buffer_pool_manager_->UnpinPage(array[i].second, true);
       }
       lower_page->SetSize(mge_inte_page->GetSize() + lower_page->GetSize());
       upper_page->SetKeyAt(idx, array[0].first);
@@ -349,6 +377,16 @@ auto BPLUSTREE_TYPE::InternalMerge(int idx, InternalPage *lower_page, InternalPa
       auto *array = lower_page->GetArray();
       for (int i = 0; i < mge_inte_page->GetSize(); ++i) {
         array[i + lower_page->GetSize()] = mge_inte_page->KeyValueAt(i);
+      }
+      Page *son;
+      BPlusTreePage *bp_son;
+      for (int i = 0; i < mge_inte_page->GetSize(); ++i) {
+        son = buffer_pool_manager_->FetchPage(array[i + lower_page->GetSize()].second);
+        son->WLatch();
+        bp_son = reinterpret_cast<BPlusTreePage*>(son->GetData());
+        bp_son->SetParentPageId(lower_page->GetPageId());
+        son->WUnlatch();
+        buffer_pool_manager_->UnpinPage(array[i + lower_page->GetSize()].second, true);
       }
       lower_page->SetSize(mge_inte_page->GetSize() + lower_page->GetSize());
       upper_page->Delete(idx + 1);
@@ -376,11 +414,15 @@ auto BPLUSTREE_TYPE::LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper
     mge_leaf_page = reinterpret_cast<LeafPage *>(mge_page->GetData());
     if (mge_leaf_page->GetSize() + leaf_page->GetSize() <= mge_leaf_page->GetMaxSize()) {
       auto *array = leaf_page->GetArray();
-      for (int i = 0; i < mge_leaf_page->GetSize(); ++i) {
+      for (int i = leaf_page->GetSize() - 1; i >= 0; --i) {
         array[i + mge_leaf_page->GetSize()] = array[i];
+      }
+      for (int i = 0; i < mge_leaf_page->GetSize(); ++i) {
         array[i] = mge_leaf_page->KeyValueAt(i);
       }
+
       leaf_page->SetSize(mge_leaf_page->GetSize() + leaf_page->GetSize());
+      leaf_page->SetPrevPageId(mge_leaf_page->GetPrevPageId());
       upper_page->SetKeyAt(idx, array[0].first);
       upper_page->Delete(idx - 1);
       res = true;
@@ -403,6 +445,7 @@ auto BPLUSTREE_TYPE::LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper
         array[i + leaf_page->GetSize()] = mge_leaf_page->KeyValueAt(i);
       }
       leaf_page->SetSize(mge_leaf_page->GetSize() + leaf_page->GetSize());
+      leaf_page->SetNextPageId(mge_leaf_page->GetNextPageId());
       upper_page->Delete(idx + 1);
       res = true;
     }
