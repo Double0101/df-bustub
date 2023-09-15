@@ -75,7 +75,7 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::GetArray() -> MappingType * { return array_; }
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::Exist(const KeyType &key, const KeyComparator &comparator) -> bool {
   int idx = 0;
-  while (idx < GetSize() && comparator(key, KeyAt(idx)) < 0) {
+  while (idx < GetSize() && comparator(key, KeyAt(idx)) > 0) {
     ++idx;
   }
   return idx != GetSize() && comparator(key, KeyAt(idx)) == 0;

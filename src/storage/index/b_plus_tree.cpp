@@ -88,6 +88,9 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
   page = FindLeafPage(key, INSERT_MODE, transaction);
   leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
   if (leaf_page->Exist(key, comparator_)) {
+    page->WUnlatch();
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+    ClearTransPages(INSERT_MODE, transaction);
     return false;
   }
   if (!leaf_page->IsFull()) {
