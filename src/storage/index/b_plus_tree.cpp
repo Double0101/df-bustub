@@ -238,7 +238,7 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
       ++idx;
     }
     if (!LeafBorrow(idx, leaf_page, upper_ip)) {
-      LeafMerge(idx, leaf_page, upper_ip);
+      LeafMerge(idx, leaf_page, upper_ip, lower_page);
       InternalPage *lower_ip;
       while (!upper_ip->IsRootPage() && upper_ip->GetSize() < upper_ip->GetMinSize()) {
         lower_page->WUnlatch();
@@ -406,7 +406,7 @@ auto BPLUSTREE_TYPE::InternalMerge(int idx, InternalPage *lower_page, InternalPa
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper_page) -> bool {
+auto BPLUSTREE_TYPE::LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper_page, Page* &new_page) -> bool {
   Page *mge_page;
   LeafPage *mge_leaf_page;
   bool res = false;
@@ -416,24 +416,21 @@ auto BPLUSTREE_TYPE::LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper
     mge_page->WLatch();
     mge_leaf_page = reinterpret_cast<LeafPage *>(mge_page->GetData());
     if (mge_leaf_page->GetSize() + leaf_page->GetSize() <= mge_leaf_page->GetMaxSize()) {
-      auto *array = leaf_page->GetArray();
-      for (int i = leaf_page->GetSize() - 1; i >= 0; --i) {
-        array[i + mge_leaf_page->GetSize()] = array[i];
+      auto *mge_array = mge_leaf_page->GetArray();
+      for (int i = 0; i < leaf_page->GetSize(); ++i) {
+        mge_array[i + mge_leaf_page->GetSize()] = leaf_page->KeyValueAt(i);
       }
-      for (int i = 0; i < mge_leaf_page->GetSize(); ++i) {
-        array[i] = mge_leaf_page->KeyValueAt(i);
-      }
-
-      leaf_page->SetSize(mge_leaf_page->GetSize() + leaf_page->GetSize());
-      leaf_page->SetPrevPageId(mge_leaf_page->GetPrevPageId());
-      upper_page->SetKeyAt(idx, array[0].first);
-      upper_page->Delete(idx - 1);
+      mge_leaf_page->SetSize(mge_leaf_page->GetSize() + leaf_page->GetSize());
+      mge_leaf_page->SetNextPageId(leaf_page->GetNextPageId());
+      upper_page->Delete(idx);
       res = true;
     }
-    mge_page->WUnlatch();
     if (res) {
-      buffer_pool_manager_->DeletePage(mge_page->GetPageId());
+      new_page->WUnlatch();
+      buffer_pool_manager_->DeletePage(new_page->GetPageId());
+      new_page = mge_page;
     } else {
+      mge_page->WUnlatch();
       buffer_pool_manager_->UnpinPage(mge_page->GetPageId(), false);
     }
   }

@@ -94,7 +94,7 @@ class BPlusTree {
   auto InternalBorrow(int idx, InternalPage *lower_page, InternalPage *upper_page) -> bool;
   auto InternalMerge(int idx, InternalPage *lower_page, InternalPage *upper_page) -> bool;
   auto LeafBorrow(int idx, LeafPage *leaf_page, InternalPage *upper_page) -> bool;
-  auto LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper_page) -> bool;
+  auto LeafMerge(int idx, LeafPage *leaf_page, InternalPage *upper_page, Page* &new_page) -> bool;
   // member variable
   std::string index_name_;
   page_id_t root_page_id_;
