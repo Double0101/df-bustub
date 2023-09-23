@@ -51,6 +51,7 @@ auto INDEXITERATOR_TYPE::operator++() -> INDEXITERATOR_TYPE & {
     cur_idx_ = -1;
     if (next_page != INVALID_PAGE_ID) {
       cur_page_ = buffer_pool_manager_->FetchPage(next_page);
+      // this implement may cause deadlock
       cur_page_->RLatch();
       leaf_page_ = reinterpret_cast<B_PLUS_TREE_LEAF_PAGE_TYPE *>(cur_page_->GetData());
       array_ = leaf_page_->GetArray();
